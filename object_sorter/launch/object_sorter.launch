@@ -1,0 +1,3 @@
+<launch>
+  <node pkg="object_sorter" type="perception.py" name="perception" />
+</launch>
