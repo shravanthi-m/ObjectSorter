@@ -45,6 +45,7 @@ class RandomController:
         check_obstacle(range)
        
         # self.action_execute(action)
+        rospy.sleep(50)
         rospy.spin()
 
     def discretize_distance(self, distance):
