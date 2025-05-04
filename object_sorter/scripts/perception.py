@@ -5,15 +5,27 @@
 import rospy
 from sensor_msgs.msg import Image
 import ros_numpy
-from cv_bridge import CvBridge
-import cv2
-from yolo import RunYOLO 
+# from cv_bridge import CvBridge
+# import cv2
+from ultralytics import YOLOWorld 
 from movement import move
+
+IMG_WIDTH = None
+IMG_CENTER = IMG_WIDTH / 2
+COLORS = ["purple cuboid", "grey cuboid", "purple cylinder"]
+FOV_DEGREES = None # camera field of view in degrees
+PIXELS_PER_DEGREE = IMG_WIDTH / FOV_DEGREES
+
+# Initialize a YOLO-World model
+model = YOLOWorld(
+    "yolov8x-worldv2.pt"
+)
+model.set_classes(COLORS)
 
 class Perception:
     def __init__(self):
         rospy.init_node("perception", anonymous=True)
-        self.bridge = CvBridge() # converts between ROS Image messages and OpenCV images
+        # self.bridge = CvBridge() # converts between ROS Image messages and OpenCV images
         self.depth_image = None
 
         # subscribers
@@ -37,19 +49,42 @@ class Perception:
         # cv2.destroyAllWindows()
 
         as_np_arr = ros_numpy.numpify(msg)
-        result = RunYOLO.get_result(as_np_arr)  # TODO: sending and getting result from yolo
-        x_center, center_depth = get_spatial_info(result) # TODO: get x center and its depth
-        color = result # TODO: get the color
-        move(color, x_center, center_depth)
-    
-    # returns x center and center depth
-    def get_spatial_info(self, yolo_result):
-        x1, y1, x2, y2 = yolo_result[0].boxes.xyxy.cpu().numpy().squeeze().astype(np.int32)[0] # get coordinates in xyxy format from bounding boxes TODO: test this out
+        result = model.predict(as_np_arr)
+        color, x_center, center_depth, rotation_angle, dist = self.get_object_info(result)
+        move(color, x_center, center_depth, rotation_angle, dist)
+
+    # returns color, x_center, center_depth, rotation_angle, dist from robot from yolo result (for the first detected object only)
+    def get_object_info(self, yolo_result):
+        boxes = yolo_result[0].boxes # get bounding boxes
+        
+        # color
+        class_id = boxes.cls.cpu().numpy().astype(int)[0]
+        color = COLORS[class_id]
+        
+        x1, y1, x2, y2 = boxes.xyxy[0].cpu().numpy() # normalized coordinates
+        
+        # center points
         x_center = int((x1 + x2) / 2)
         y_center = int((y1 + y2) / 2)
-
-        center_depth = self.depth_image[y_center, x_center] # (0, 0) is at top-left corner of image
-        return x_center, float(center_depth) * 0.001 # TODO: idk the units for the depth and if we need to convert -- this is currently doing mm -> m
+        
+        # depth at center point
+        if self.depth_image is None:
+            rospy.logerr("Depth image not available")
+            return None
+        center_depth = float(self.depth_image[y_center, x_center]) * 0.001  # mm to m i think...
+        
+        # rotation angle
+        # zero when object is centered, negative if object is to the left, positive if to the right
+        pixels_from_center = x_center - IMG_CENTER
+        rotation_angle = pixels_from_center / PIXELS_PER_DEGREE # rot angle in degrees
+        
+        # dist to move
+        x_offset = center_depth * np.tan(np.deg2rad(rotation_angle)) # dist from object center to center of image (m)
+        dist = np.sqrt(x_offset ** 2 + center_depth ** 2) # actual straight-line dist (m) from camera to object
+        
+        rospy.loginfo(f"Detected {color} object, rotation angle = {rotation_angle:.2f} degrees, movement distance {dist:.2f} m")
+                        
+        return color, x_center, center_depth, rotation_angle, dist
 
     # sets the depth image (numpy array)
     def depth_image_callback(self, msg):
