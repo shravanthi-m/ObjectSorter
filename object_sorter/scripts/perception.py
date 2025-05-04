@@ -56,12 +56,16 @@ class Perception:
     # returns color, x_center, center_depth, rotation_angle, dist from robot from yolo result (for the first detected object only)
     def get_object_info(self, yolo_result):
         boxes = yolo_result[0].boxes # get bounding boxes
+
+        # confidence
+        conf = boxes.conf.cpu().numpy().astype(int)
+        idx_max_conf = np.argmax(conf)
         
         # color
-        class_id = boxes.cls.cpu().numpy().astype(int)[0]
+        class_id = boxes.cls.cpu().numpy().astype(int)[idx_max_conf]
         color = COLORS[class_id]
         
-        x1, y1, x2, y2 = boxes.xyxy[0].cpu().numpy() # NOT normalized (top-left and bottom-right corners of bounding box)
+        x1, y1, x2, y2 = boxes.xyxy[idx_max_conf].cpu().numpy() # NOT normalized (top-left and bottom-right corners of bounding box)
         
         # center points
         x_center = int((x1 + x2) / 2)
