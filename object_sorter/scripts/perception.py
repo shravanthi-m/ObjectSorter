@@ -5,43 +5,60 @@
 import rospy
 from sensor_msgs.msg import Image
 import ros_numpy
-# from cv_bridge import CvBridge
-# import cv2
-from ultralytics import YOLOWorld 
+from cv_bridge import CvBridge
+import cv2
+from ultralytics import YOLO
+import numpy as np
 from movement import move
+import os
 
-IMG_WIDTH = 1920 # RGB width (pixels)
+IMG_WIDTH = 640  # RGB width (pixels)
 IMG_CENTER = IMG_WIDTH / 2
-COLORS = ["blue cuboid", "blue cylinder", "green cuboid", "grey cuboid", "purple cuboid", "red cuboid"]
-FOV_DEGREES = 69 # RGB field of view in degrees (horizontal)
+COLORS = [
+    "blue cuboid",
+    "blue cylinder",
+    "green cuboid",
+    "grey cuboid",
+    "purple cuboid",
+    "red cuboid",
+]
+FOV_DEGREES = 69  # RGB field of view in degrees (horizontal)
 PIXELS_PER_DEGREE = IMG_WIDTH / FOV_DEGREES
 
+print(os.getcwd())
 # Initialize a YOLO-World model
-model = YOLOWorld(
-    "best.pt"
-)
-model.set_classes(COLORS)
+model = YOLO("/catkin_ws/src/object_sorter/best.onnx")
+# model.set_classes(COLORS)
+
 
 class Perception:
     def __init__(self):
         rospy.init_node("perception", anonymous=True)
-        # self.bridge = CvBridge() # converts between ROS Image messages and OpenCV images
+        self.bridge = (
+            CvBridge()
+        )  # converts between ROS Image messages and OpenCV images
         self.depth_image = None
 
         # subscribers
-        self.color_image_susbcriber = rospy.Subscriber("/camera/color/image_raw", Image, self.image_callback) # rgb image from realsense camera
-        self.depth_image_subscriber = rospy.Subscriber("/camera/aligned_depth_to_color/image_raw", Image, self.depth_image_callback)
+        self.color_image_susbcriber = rospy.Subscriber(
+            "/camera/color/image_raw", Image, self.image_callback
+        )  # rgb image from realsense camera
+        self.depth_image_subscriber = rospy.Subscriber(
+            "/camera/aligned_depth_to_color/image_raw", Image, self.depth_image_callback
+        )
 
         rospy.loginfo("Running Perception node.")
 
     # passes classification result and spatial info to movement function
     def image_callback(self, msg):
         # Note: use below code if you want to see the actual image
-        # try:
-        #     img = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough") # desired_encoding arg for preserving img data type
-        # except Exception as e:
-        #     rospy.logerr("Can't convert Image to OpenCv image")
-        #     return
+        try:
+            img = self.bridge.imgmsg_to_cv2(
+                msg, desired_encoding="passthrough"
+            )  # desired_encoding arg for preserving img data type
+        except Exception as e:
+            rospy.logerr("Can't convert Image to OpenCv image")
+            return
 
         # show the actual image
         # cv2.imshow("Realsense image feed", img)
@@ -49,50 +66,67 @@ class Perception:
         # cv2.destroyAllWindows()
 
         as_np_arr = ros_numpy.numpify(msg)
-        result = model.predict(as_np_arr)
-        color, x_center, center_depth, rotation_angle, dist = self.get_object_info(result)
-        move(color, x_center, center_depth, rotation_angle, dist)
+        print("1")
+        result = model.predict(img)
+        # result[0].show()
+        print("2")
+        color, x_center, center_depth, rotation_angle, dist = self.get_object_info(
+            result
+        )
+        # move(color, x_center, center_depth, rotation_angle, dist)
 
     # returns color, x_center, center_depth, rotation_angle, dist from robot from yolo result (for the object classified with the highest confidence)
     def get_object_info(self, yolo_result):
-        boxes = yolo_result[0].boxes # get bounding boxes
+        yolo_result[0].save("test.jpg")
+        boxes = yolo_result[0].boxes  # get bounding boxes
 
         # confidence
         conf = boxes.conf.cpu().numpy().astype(int)
         idx_max_conf = np.argmax(conf)
-        
+
         # color
         class_id = boxes.cls.cpu().numpy().astype(int)[idx_max_conf]
         color = COLORS[class_id]
-        
-        x1, y1, x2, y2 = boxes.xyxy[idx_max_conf].cpu().numpy() # NOT normalized (top-left and bottom-right corners of bounding box)
-        
+
+        x1, y1, x2, y2 = (
+            boxes.xyxy[idx_max_conf].cpu().numpy()
+        )  # NOT normalized (top-left and bottom-right corners of bounding box)
+
         # center points
         x_center = int((x1 + x2) / 2)
         y_center = int((y1 + y2) / 2)
-        
+
         # depth at center point
         if self.depth_image is None:
             rospy.logerr("Depth image not available")
             return None
-        center_depth = float(self.depth_image[y_center, x_center]) * 0.001  # mm to m i think...
-        
+        center_depth = (
+            float(self.depth_image[y_center, x_center]) * 0.001
+        )  # mm to m i think...
+
         # rotation angle
         # zero when object is centered, negative if object is to the left, positive if to the right
         pixels_from_center = x_center - IMG_CENTER
-        rotation_angle = pixels_from_center / PIXELS_PER_DEGREE # rot angle in degrees
-        
+        rotation_angle = pixels_from_center / PIXELS_PER_DEGREE  # rot angle in degrees
+
         # dist to move
-        x_offset = center_depth * np.tan(np.deg2rad(rotation_angle)) # dist from object center to center of image (m)
-        dist = np.sqrt(x_offset ** 2 + center_depth ** 2) # actual straight-line dist (m) from camera to object
-        
-        rospy.loginfo(f"Detected {color} object, rotation angle = {rotation_angle:.2f} degrees, movement distance {dist:.2f} m")
-                        
+        x_offset = center_depth * np.tan(
+            np.deg2rad(rotation_angle)
+        )  # dist from object center to center of image (m)
+        dist = np.sqrt(
+            x_offset**2 + center_depth**2
+        )  # actual straight-line dist (m) from camera to object
+
+        rospy.loginfo(
+            f"Detected {color} object, rotation angle = {rotation_angle:.2f} degrees, movement distance {dist:.2f} m"
+        )
+
         return color, x_center, center_depth, rotation_angle, dist
 
     # sets the depth image (numpy array)
     def depth_image_callback(self, msg):
         self.depth_image = ros_numpy.numpify(msg)
+
 
 if __name__ == "__main__":
     try:
