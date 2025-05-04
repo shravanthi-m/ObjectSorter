@@ -10,15 +10,15 @@ import ros_numpy
 from ultralytics import YOLOWorld 
 from movement import move
 
-IMG_WIDTH = None
+IMG_WIDTH = 1920 # RGB width (pixels)
 IMG_CENTER = IMG_WIDTH / 2
-COLORS = ["purple cuboid", "grey cuboid", "purple cylinder"]
-FOV_DEGREES = None # camera field of view in degrees
+COLORS = ["blue cuboid", "blue cylinder", "green cuboid", "grey cuboid", "purple cuboid", "red cuboid"]
+FOV_DEGREES = 69 # RGB field of view in degrees (horizontal)
 PIXELS_PER_DEGREE = IMG_WIDTH / FOV_DEGREES
 
 # Initialize a YOLO-World model
 model = YOLOWorld(
-    "yolov8x-worldv2.pt"
+    "best.pt"
 )
 model.set_classes(COLORS)
 
@@ -53,7 +53,7 @@ class Perception:
         color, x_center, center_depth, rotation_angle, dist = self.get_object_info(result)
         move(color, x_center, center_depth, rotation_angle, dist)
 
-    # returns color, x_center, center_depth, rotation_angle, dist from robot from yolo result (for the first detected object only)
+    # returns color, x_center, center_depth, rotation_angle, dist from robot from yolo result (for the object classified with the highest confidence)
     def get_object_info(self, yolo_result):
         boxes = yolo_result[0].boxes # get bounding boxes
 
