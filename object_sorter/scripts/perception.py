@@ -61,7 +61,7 @@ class Perception:
         class_id = boxes.cls.cpu().numpy().astype(int)[0]
         color = COLORS[class_id]
         
-        x1, y1, x2, y2 = boxes.xyxy[0].cpu().numpy() # normalized coordinates
+        x1, y1, x2, y2 = boxes.xyxy[0].cpu().numpy() # NOT normalized (top-left and bottom-right corners of bounding box)
         
         # center points
         x_center = int((x1 + x2) / 2)
