@@ -13,8 +13,10 @@ from movement import move, sort
 import os
 import time
 
-IMG_WIDTH = 640  # RGB width (pixels)
-IMG_CENTER = IMG_WIDTH / 2
+RGB_IMG_WIDTH = 1920  # pixels
+DEPTH_IMG_WIDTH = 1280
+MODEL_IMG_WIDTH = 640
+IMG_CENTER = MODEL_IMG_WIDTH / 2
 COLORS = [
     "blue cuboid",
     "blue cylinder",
@@ -24,7 +26,7 @@ COLORS = [
     "red cuboid",
 ]
 FOV_DEGREES = 69  # RGB field of view in degrees (horizontal)
-PIXELS_PER_DEGREE = IMG_WIDTH / FOV_DEGREES
+PIXELS_PER_DEGREE = MODEL_IMG_WIDTH / FOV_DEGREES
 
 print(os.getcwd())
 # Initialize a YOLO-World model
@@ -37,7 +39,7 @@ class Perception:
         self.bridge = (
             CvBridge()
         )  # converts between ROS Image messages and OpenCV images
-        self.depth_image = None
+        self.depth_image = None # in model size
 
         # subscribers
         self.color_image_susbcriber = rospy.Subscriber(
@@ -57,6 +59,11 @@ class Perception:
         self.process_interval = 0.5 # sleep time between image process (s)
 
         rospy.loginfo("Running Perception node.")
+    
+    # resize to width needed for model
+    def resize_to_model_size(img):
+        img = self.bridge.imgmsg_to_cv2(img, desired_encoding="passthrough")
+        return cv2.resize(img, (MODEL_IMG_WIDTH, img.shape[0]), interpolation=cv2.INTER_LINEAR)
 
     # track objects and initiate movement
     def image_callback(self, msg):
@@ -81,9 +88,11 @@ class Perception:
         # cv2.waitKey(1) # wait 1 ms to let the window refresh, waits for key press
         # cv2.destroyAllWindows()
 
-        as_np_arr = ros_numpy.numpify(msg)
+        resized_img = self.resize_to_model_size(msg)
+
+        # as_np_arr = ros_numpy.numpify(resized_img)
         print("=====> START TRACKING...")
-        result = model.track(as_np_arr, persist=True)
+        result = model.track(resized_img, persist=True)
         print("=====> DONE TRACKING!")
         # result[0].show()
 
@@ -190,7 +199,7 @@ class Perception:
 
     # sets the depth image (numpy array)
     def depth_image_callback(self, msg):
-        self.depth_image = ros_numpy.numpify(msg)
+        self.depth_image = self.resize_to_model_size(msg)
 
 if __name__ == "__main__":
     try:
