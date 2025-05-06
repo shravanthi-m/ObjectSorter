@@ -66,9 +66,9 @@ class Perception:
         # cv2.waitKey(1) # wait 1 ms to let the window refresh, waits for key press
         # cv2.destroyAllWindows()
 
-        #as_np_arr = ros_numpy.numpify(msg)
+        as_np_arr = ros_numpy.numpify(msg)
         print("1")
-        result = model.predict(msg)
+        result = model.predict(as_np_arr)
         # result[0].show()
         print("2")
         color, x_center, center_depth, rotation_angle, dist = self.get_object_info(
