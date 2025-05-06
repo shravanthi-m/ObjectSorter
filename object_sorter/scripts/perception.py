@@ -9,8 +9,9 @@ from cv_bridge import CvBridge
 import cv2
 from ultralytics import YOLO
 import numpy as np
-from movement import move
+from movement import move, sort
 import os
+import time
 
 IMG_WIDTH = 640  # RGB width (pixels)
 IMG_CENTER = IMG_WIDTH / 2
@@ -30,7 +31,6 @@ print(os.getcwd())
 model = YOLO("/catkin_ws/src/object_sorter/best.onnx")
 # model.set_classes(COLORS)
 
-
 class Perception:
     def __init__(self):
         rospy.init_node("perception", anonymous=True)
@@ -47,18 +47,34 @@ class Perception:
             "/camera/aligned_depth_to_color/image_raw", Image, self.depth_image_callback
         )
 
+        self.tracked_objects = {}
+        self.cur_tracked_obj = None
+        self.sorting_mode = False
+        self.moving_mode = False
+        self.idle_mode = False
+
+        self.last_process_time = time.time()
+        self.process_interval = 0.5 # sleep time between image process (s)
+
         rospy.loginfo("Running Perception node.")
 
-    # passes classification result and spatial info to movement function
+    # track objects and initiate movement
     def image_callback(self, msg):
-        # Note: use below code if you want to see the actual image
-        try:
-            img = self.bridge.imgmsg_to_cv2(
-                msg, desired_encoding="passthrough"
-            )  # desired_encoding arg for preserving img data type
-        except Exception as e:
-            rospy.logerr("Can't convert Image to OpenCv image")
+        if time.time() - self.last_process_time < self.process_interval: # skip frame
             return
+        
+        print("Entered image callback...")
+        if self.depth_image is None:
+            rospy.logerr("!! Matching depth image not available, exiting !!")
+            return
+        # Note: use below code if you want to see the actual image
+        # try:
+        #     img = self.bridge.imgmsg_to_cv2(
+        #         msg, desired_encoding="passthrough"
+        #     )  # desired_encoding arg for preserving img data type
+        # except Exception as e:
+        #     rospy.logerr("Can't convert Image to OpenCv image")
+        #     return
 
         # show the actual image
         # cv2.imshow("Realsense image feed", img)
@@ -66,67 +82,115 @@ class Perception:
         # cv2.destroyAllWindows()
 
         as_np_arr = ros_numpy.numpify(msg)
-        print("1")
-        result = model.predict(img)
+        print("=====> START TRACKING...")
+        result = model.track(as_np_arr, persist=True)
+        print("=====> DONE TRACKING!")
         # result[0].show()
-        print("2")
-        color, x_center, center_depth, rotation_angle, dist = self.get_object_info(
-            result
-        )
-        # move(color, x_center, center_depth, rotation_angle, dist)
 
-    # returns color, x_center, center_depth, rotation_angle, dist from robot from yolo result (for the object classified with the highest confidence)
-    def get_object_info(self, yolo_result):
-        yolo_result[0].save("test.jpg")
-        boxes = yolo_result[0].boxes  # get bounding boxes
+        # if there are no tracked objects, return
+        contains_tracked_items = result[0].boxes.id is not None
+        if not contains_tracked_items:
+            print("!! No tracked objects, exiting !!")
+            return
+        
+        objs_info, highest_conf_id = self.get_objects_info(result) # color, x_center, center_depth, rotation_angle, dist from robot, conf, box for each obj (filters out dist = 0) + obj id with highest confidence
+        if not objs_info:
+            print("!! All detected objects have distance = 0, exiting !!")
+            return
 
-        # confidence
-        conf = boxes.conf.cpu().numpy().astype(int)
-        idx_max_conf = np.argmax(conf)
+        self.tracked_objects = objs_info # store internally
 
-        # color
-        class_id = boxes.cls.cpu().numpy().astype(int)[idx_max_conf]
-        color = COLORS[class_id]
+        self.last_process_time = time.time()
 
-        x1, y1, x2, y2 = (
-            boxes.xyxy[idx_max_conf].cpu().numpy()
-        )  # NOT normalized (top-left and bottom-right corners of bounding box)
+        if self.idle_mode:
+            self.cur_tracked_obj = highest_conf_id # "lock onto" object with the highest confidence
+        
+        if self.cur_tracked_obj not in self.tracked_objects:
+            print(f"!! Lost tracked object {self.cur_tracked_obj}, exiting and starting over !!")
+            self.idle_mode = True
+            self.moving_mode = False
+            self.sorting_mode = False
+            return
+        
+        self.moving_or_sorting()
+    
+    # handles logic of whether to keep moving or sorting (or go into idle status again)
+    def moving_or_sorting():
+        status = None
+        if self.idle_mode:
+            rospy.loginfo(f"Moving object {self.cur_tracked_obj}...")
+            status = move(self.tracked_objects[self.cur_tracked_obj]) # moves a bit and returns whether done moving to object (but has not started sorting behavior yet)
+            self.idle_mode = False
+            self.moving_mode = True
+        elif self.moving_mode:
+            status = move(self.tracked_objects[self.cur_tracked_obj])
+        elif self.sorting_mode:
+            status = sort(self.tracked_objects[self.cur_tracked_obj])
 
-        # center points
-        x_center = int((x1 + x2) / 2)
-        y_center = int((y1 + y2) / 2)
+        if status == "finished_moving":
+            rospy.loginfo(f"Finished moving tracked object {self.cur_tracked_obj}, Now sorting...")
+            self.sorting_mode = True # now we want to sort
+            self.moving_mode = False
+            self.idle_mode = False
+        elif status == "finished_sorting":
+            rospy.loginfo(f"Finished sorting tracked object {self.cur_tracked_obj}!")
+            self.sorting_mode = False
+            self.moving_mode = False
+            self.idle_mode = True
 
-        # depth at center point
-        if self.depth_image is None:
-            rospy.logerr("Depth image not available")
-            return None
-        center_depth = (
-            float(self.depth_image[y_center, x_center]) * 0.001
-        )  # mm to m i think...
+    # returns {obj id: (color, x_center, center_depth, rotation_angle, dist from robot, confidence, box} dict for tracked objects from yolo result
+    # Note: filters out dist = 0
+    def get_objects_info(self, yolo_result):
+        bounding_boxes = yolo_result[0].boxes.xyxy.cpu()
+        classes = yolo_result[0].boxes.cls.cpu().numpy().astype(int)
+        obj_ids = yolo_result[0].boxes.id.int().cpu().tolist()
+        confs = yolo_result[0].boxes.conf.cpu().numpy().astype(int)
 
-        # rotation angle
-        # zero when object is centered, negative if object is to the left, positive if to the right
-        pixels_from_center = x_center - IMG_CENTER
-        rotation_angle = pixels_from_center / PIXELS_PER_DEGREE  # rot angle in degrees
+        info = {}
+        for box, class_id, obj_id, conf in zip(bounding_boxes, classes, obj_ids, confs):
+            # color
+            color = COLORS[class_id]
 
-        # dist to move
-        x_offset = center_depth * np.tan(
-            np.deg2rad(rotation_angle)
-        )  # dist from object center to center of image (m)
-        dist = np.sqrt(
-            x_offset**2 + center_depth**2
-        )  # actual straight-line dist (m) from camera to object
+            # x_center
+            x1, y1, x2, y2 = box # NOT normalized (top-left and bottom-right corners of bounding box)
+            x_center = int((x1 + x2) / 2)
+            y_center = int((y1 + y2) / 2)
 
-        rospy.loginfo(
-            f"Detected {color} object, rotation angle = {rotation_angle:.2f} degrees, movement distance {dist:.2f} m"
-        )
+            # center_depth
+            center_depth = (
+                float(self.depth_image[y_center, x_center]) * 0.001
+            )  # mm to m probably
+        
+            # rotation angle
+            # zero when object is centered, negative if object is to the left, positive if to the right
+            pixels_from_center = x_center - IMG_CENTER
+            rotation_angle = pixels_from_center / PIXELS_PER_DEGREE  # rot angle in degrees
 
-        return color, x_center, center_depth, rotation_angle, dist
+            # dist from robot
+            x_offset = center_depth * np.tan(
+                np.deg2rad(rotation_angle)
+            )  # dist from object center to center of image (m)
+            dist = np.sqrt(
+                x_offset**2 + center_depth**2
+            )  # actual straight-line dist (m) from camera to object
+
+            if dist == 0:
+                rospy.loginfo(f"Ignoring detected object with id = {obj_id} because dist = 0")
+            else:
+                rospy.loginfo(f"Detected {color} object with id = {obj_id}, rotation angle = {rotation_angle} degrees, distance = {dist} m")
+                info[obj_id] = {
+                    "color": color,
+                    "x_center": x_center,
+                    "center_depth": center_depth,
+                    "rotation_angle": rotation_angle,
+                    "dist": dist,
+                    "conf": conf,
+                    "box": box}
+        return info, obj_ids[np.argmax(confs)]
 
     # sets the depth image (numpy array)
     def depth_image_callback(self, msg):
         self.depth_image = ros_numpy.numpify(msg)
-
 
 if __name__ == "__main__":
     try:
