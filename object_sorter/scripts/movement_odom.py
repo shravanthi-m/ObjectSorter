@@ -21,7 +21,7 @@ def odom_callback(msg):
     current_rot = rot
     odom_received = True
 
-rospy.init_node("move_robot")
+#rospy.init_node("move_robot")
 vel_publisher = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
 odom_subscriber = rospy.Subscriber("/odom", Odometry, odom_callback)
 
@@ -59,7 +59,7 @@ def move(color, x_center, center_depth, rotation_angle_deg, dist):
     rospy.sleep(0.5)
 
     twist = Twist()
-    move_speed = 0.2  # m/s
+    move_speed = 0.1  # m/s
     move_duration = dist / move_speed
     start_time = rospy.Time.now().to_sec()
 
