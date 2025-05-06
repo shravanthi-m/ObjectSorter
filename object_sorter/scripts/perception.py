@@ -9,7 +9,8 @@ from cv_bridge import CvBridge
 import cv2
 from ultralytics import YOLO
 import numpy as np
-from movement import move
+#from movement import move
+from movement_odom import move
 import os
 
 IMG_WIDTH = 640  # RGB width (pixels)
@@ -52,28 +53,28 @@ class Perception:
     # passes classification result and spatial info to movement function
     def image_callback(self, msg):
         # Note: use below code if you want to see the actual image
-        try:
+        """try:
             img = self.bridge.imgmsg_to_cv2(
                 msg, desired_encoding="passthrough"
             )  # desired_encoding arg for preserving img data type
         except Exception as e:
             rospy.logerr("Can't convert Image to OpenCv image")
-            return
+            return"""
 
         # show the actual image
         # cv2.imshow("Realsense image feed", img)
         # cv2.waitKey(1) # wait 1 ms to let the window refresh, waits for key press
         # cv2.destroyAllWindows()
 
-        as_np_arr = ros_numpy.numpify(msg)
+        #as_np_arr = ros_numpy.numpify(msg)
         print("1")
-        result = model.predict(img)
+        result = model.predict(msg)
         # result[0].show()
         print("2")
         color, x_center, center_depth, rotation_angle, dist = self.get_object_info(
             result
         )
-        # move(color, x_center, center_depth, rotation_angle, dist)
+        move(color, x_center, center_depth, rotation_angle, dist)
 
     # returns color, x_center, center_depth, rotation_angle, dist from robot from yolo result (for the object classified with the highest confidence)
     def get_object_info(self, yolo_result):
