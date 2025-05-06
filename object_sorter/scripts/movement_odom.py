@@ -5,25 +5,30 @@ import numpy as np
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion
+from tf import tfMessage
 
 current_rot = 0.0
 odom_received = False
 
-def odom_callback(msg):
+def tf_callback(msg):
     global current_rot, odom_received
-    orientation_q = msg.pose.pose.orientation
-    _, _, rot = euler_from_quaternion([
-        orientation_q.x,
-        orientation_q.y,
-        orientation_q.z,
-        orientation_q.w
-    ])
+    frame_id = msg.transforms[-1].header.frame_id
+
+    if frame_id == "odom":
+        orientation_q = msg.transforms[-1].transform.rotation
+        _, _, rot = euler_from_quaternion([
+            orientation_q.x,
+            orientation_q.y,
+            orientation_q.z,
+            orientation_q.w
+        ])
+    
     current_rot = rot
     odom_received = True
 
 #rospy.init_node("move_robot")
 vel_publisher = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
-odom_subscriber = rospy.Subscriber("/odom", Odometry, odom_callback)
+tf_subscriber = rospy.Subscriber("/tf", tfMessage, tf_callback)
 
 def normalize_angle(angle):
     """ Normalize angle to [-pi, pi] """
