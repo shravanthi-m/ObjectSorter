@@ -4,7 +4,8 @@
 
 from random_walk import RandomController
 import rospy
-from sensor_msgs.msg import Image, Bool
+from sensor_msgs.msg import Image
+from std_msgs.msg import Bool
 import ros_numpy
 from cv_bridge import CvBridge
 import cv2
