@@ -2,6 +2,7 @@
 
 # For getting and processing input data from realsense camera
 
+from object_sorter.scripts.random_walk import RandomController
 import rospy
 from sensor_msgs.msg import Image, Bool
 import ros_numpy
@@ -33,13 +34,15 @@ print(os.getcwd())
 model = YOLO("/catkin_ws/src/object_sorter/best.onnx")
 # model.set_classes(COLORS)
 
+
 class Perception:
     def __init__(self):
         rospy.init_node("perception", anonymous=True)
         self.bridge = (
             CvBridge()
         )  # converts between ROS Image messages and OpenCV images
-        self.depth_image = None # in model size
+        self.depth_image = None  # in model size
+        self.rgb_image = None  # in model size
 
         # subscribers
         self.color_image_susbcriber = rospy.Subscriber(
@@ -50,8 +53,11 @@ class Perception:
         )
 
         # publishers
-        self.object_detected_publisher = rospy.Publisher("/object_detected", Bool, queue_size=10)
+        # self.object_detected_publisher = rospy.Publisher(
+        #     "/object_detected", Bool, queue_size=10
+        # )
 
+        self.random_walk_controller = RandomController()
         self.tracked_objects = {}
         self.cur_tracked_obj = None
         self.sorting_mode = False
@@ -59,20 +65,22 @@ class Perception:
         self.idle_mode = True
 
         self.last_process_time = time.time()
-        self.process_interval = 0.5 # sleep time between image process (s)
+        self.process_interval = 0.5  # sleep time between image process (s)
 
         rospy.loginfo("Running Perception node.")
-    
+
     # resize to width needed for model
     def resize_to_model_size(self, img):
         img = self.bridge.imgmsg_to_cv2(img, desired_encoding="passthrough")
-        return cv2.resize(img, (MODEL_IMG_WIDTH, MODEL_IMG_WIDTH), interpolation=cv2.INTER_LINEAR)
+        return cv2.resize(
+            img, (MODEL_IMG_WIDTH, MODEL_IMG_WIDTH), interpolation=cv2.INTER_LINEAR
+        )
 
     # track objects and initiate movement
     def image_callback(self, msg):
-        if time.time() - self.last_process_time < self.process_interval: # skip frame
+        if time.time() - self.last_process_time < self.process_interval:  # skip frame
             return
-        
+
         print("Entered image callback...")
         if self.depth_image is None:
             rospy.logerr("!! Matching depth image not available, exiting !!")
@@ -92,49 +100,63 @@ class Perception:
         # cv2.destroyAllWindows()
 
         resized_img = self.resize_to_model_size(msg)
+        self.rgb_image = resized_img
 
-        # as_np_arr = ros_numpy.numpify(resized_img)
-        print("=====> START TRACKING...")
-        result = model.track(resized_img, persist=True)
-        print("=====> DONE TRACKING!")
-        # result[0].show()
+    def run(self):
+        while not rospy.is_shutdown():
+            if self.rgb_image is None:
+                continue
+            # as_np_arr = ros_numpy.numpify(resized_img)
+            print("=====> START TRACKING...")
+            result = model.track(self.rgb_image, persist=True)
+            print("=====> DONE TRACKING!")
+            # result[0].show()
 
-        # if there are no tracked objects, return
-        contains_tracked_items = result[0].boxes.id is not None
-        if not contains_tracked_items:
-            print("!! No tracked objects, exiting !!")
-            return
-        
-        objs_info, highest_conf_id = self.get_objects_info(result) # color, x_center, center_depth, rotation_angle, dist from robot, conf, box for each obj (filters out dist = 0) + obj id with highest confidence
-        if not objs_info:
-            print("!! All detected objects have distance = 0, exiting !!")
-            return
+            # if there are no tracked objects, return
+            contains_tracked_items = result[0].boxes.id is not None
+            if not contains_tracked_items:
+                print("!! No tracked objects, random walk !!")
+                self.random_walk_controller.action_execute()
+                continue
 
-        self.tracked_objects = objs_info # store internally
+            objs_info, highest_conf_id = self.get_objects_info(
+                result
+            )  # color, x_center, center_depth, rotation_angle, dist from robot, conf, box for each obj (filters out dist = 0) + obj id with highest confidence
+            if not objs_info:
+                print("!! All detected objects have distance = 0, exiting !!")
+                continue
 
-        self.last_process_time = time.time()
+            self.tracked_objects = objs_info  # store internally
 
-        if self.idle_mode:
-            self.cur_tracked_obj = highest_conf_id # "lock onto" object with the highest confidence
-            detected_msg = Bool()
-            detected_msg.data = True
-            self.object_detected_publisher.publish(bool_msg)
-        
-        if self.cur_tracked_obj not in self.tracked_objects:
-            print(f"!! Lost tracked object {self.cur_tracked_obj}, exiting and starting over !!")
-            self.idle_mode = True
-            self.moving_mode = False
-            self.sorting_mode = False
-            return
-        
-        self.moving_or_sorting()
-    
+            self.last_process_time = time.time()
+
+            if self.idle_mode:
+                self.cur_tracked_obj = (
+                    highest_conf_id  # "lock onto" object with the highest confidence
+                )
+                detected_msg = Bool()
+                detected_msg.data = True
+                # self.object_detected_publisher.publish(bool_msg)
+
+            if self.cur_tracked_obj not in self.tracked_objects:
+                print(
+                    f"!! Lost tracked object {self.cur_tracked_obj}, exiting and starting over !!"
+                )
+                self.idle_mode = True
+                self.moving_mode = False
+                self.sorting_mode = False
+                continue
+
+            self.moving_or_sorting()
+
     # handles logic of whether to keep moving or sorting (or go into idle status again)
     def moving_or_sorting(self):
         status = None
         if self.idle_mode:
             rospy.loginfo(f"Moving object {self.cur_tracked_obj}...")
-            status = move(self.tracked_objects[self.cur_tracked_obj]) # moves a bit and returns whether done moving to object (but has not started sorting behavior yet)
+            status = move(
+                self.tracked_objects[self.cur_tracked_obj]
+            )  # moves a bit and returns whether done moving to object (but has not started sorting behavior yet)
             self.idle_mode = False
             self.moving_mode = True
             self.sorting_mode = False
@@ -144,8 +166,10 @@ class Perception:
             status = sort(self.tracked_objects[self.cur_tracked_obj])
 
         if status == "finished_moving":
-            rospy.loginfo(f"Finished moving tracked object {self.cur_tracked_obj}, Now sorting...")
-            self.sorting_mode = True # now we want to sort
+            rospy.loginfo(
+                f"Finished moving tracked object {self.cur_tracked_obj}, Now sorting..."
+            )
+            self.sorting_mode = True  # now we want to sort
             self.moving_mode = False
             self.idle_mode = False
         elif status == "finished_sorting":
@@ -168,7 +192,9 @@ class Perception:
             color = COLORS[class_id]
 
             # x_center
-            x1, y1, x2, y2 = box # NOT normalized (top-left and bottom-right corners of bounding box)
+            x1, y1, x2, y2 = (
+                box  # NOT normalized (top-left and bottom-right corners of bounding box)
+            )
             x_center = int((x1 + x2) / 2)
             y_center = int((y1 + y2) / 2)
 
@@ -176,11 +202,13 @@ class Perception:
             center_depth = (
                 float(self.depth_image[y_center, x_center]) * 0.001
             )  # mm to m probably
-        
+
             # rotation angle
             # zero when object is centered, negative if object is to the left, positive if to the right
             pixels_from_center = x_center - IMG_CENTER
-            rotation_angle = pixels_from_center / PIXELS_PER_DEGREE  # rot angle in degrees
+            rotation_angle = (
+                pixels_from_center / PIXELS_PER_DEGREE
+            )  # rot angle in degrees
 
             # dist from robot
             x_offset = center_depth * np.tan(
@@ -191,9 +219,17 @@ class Perception:
             )  # actual straight-line dist (m) from camera to object
 
             if dist == 0:
-                rospy.loginfo(f"Ignoring detected object with id = {obj_id} because dist = 0")
+                rospy.loginfo(
+                    f"Ignoring detected object with id = {obj_id} because dist = 0"
+                )
+            elif conf <= 0.8:
+                rospy.loginfo(
+                    f"Ignoring detected object with id = {obj_id} because conf = {conf} <= 0.8"
+                )
             else:
-                rospy.loginfo(f"Detected {color} object with id = {obj_id}, rotation angle = {rotation_angle} degrees, distance = {dist} m")
+                rospy.loginfo(
+                    f"Detected {color} object with id = {obj_id}, rotation angle = {rotation_angle} degrees, distance = {dist} m"
+                )
                 info[obj_id] = {
                     "color": color,
                     "x_center": x_center,
@@ -201,12 +237,14 @@ class Perception:
                     "rotation_angle": rotation_angle,
                     "dist": dist,
                     "conf": conf,
-                    "box": box}
+                    "box": box,
+                }
         return info, obj_ids[np.argmax(confs)]
 
     # sets the depth image (numpy array)
     def depth_image_callback(self, msg):
         self.depth_image = self.resize_to_model_size(msg)
+
 
 if __name__ == "__main__":
     try:
