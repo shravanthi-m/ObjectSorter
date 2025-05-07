@@ -3,7 +3,7 @@
 # For getting and processing input data from realsense camera
 
 import rospy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, Bool
 import ros_numpy
 from cv_bridge import CvBridge
 import cv2
@@ -48,6 +48,9 @@ class Perception:
         self.depth_image_subscriber = rospy.Subscriber(
             "/camera/aligned_depth_to_color/image_raw", Image, self.depth_image_callback
         )
+
+        # publishers
+        self.object_detected_publisher = rospy.Publisher("/object_detected", Bool, queue_size=10)
 
         self.tracked_objects = {}
         self.cur_tracked_obj = None
@@ -113,6 +116,9 @@ class Perception:
 
         if self.idle_mode:
             self.cur_tracked_obj = highest_conf_id # "lock onto" object with the highest confidence
+            detected_msg = Bool()
+            detected_msg.data = True
+            self.object_detected_publisher.publish(bool_msg)
         
         if self.cur_tracked_obj not in self.tracked_objects:
             print(f"!! Lost tracked object {self.cur_tracked_obj}, exiting and starting over !!")
