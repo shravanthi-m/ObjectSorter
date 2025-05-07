@@ -7,6 +7,11 @@ from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion
 from tf2_msgs.msg import TFMessage
 from movement import unpack
+import time
+
+start_time = None
+move_time = 5
+sort_time = 5
 
 current_rot = 0.0
 start_x = 0.0
@@ -100,3 +105,9 @@ def move(msg):
     
     return True
 
+def sort(obj_info):
+    if not start_time:
+        start_time = time.time()
+    if time.time() - start_time >= sort_time:
+        start_time = None
+        return "finished_sorting"
