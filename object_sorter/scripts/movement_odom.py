@@ -19,7 +19,6 @@ start_y = 0.0
 current_x = 0.0
 current_y = 0.0
 odom_received = False
-rate = rospy.Rate(10)
 
 def tf_callback(msg):
     global current_rot, current_x, current_y, odom_received
@@ -53,6 +52,8 @@ def move(msg):
     start_x = current_x 
     start_y = current_y
     color, x_center, center_depth, rotation_angle_deg, dist = unpack(msg)
+    
+    rate = rospy.Rate(10)
     
     while not odom_received and not rospy.is_shutdown():
         print(odom_received)
@@ -91,6 +92,7 @@ def move(msg):
         if elapsed >= move_duration:
             break"""
         distance_moved = np.sqrt((current_x**2 - start_x**2) + (current_y**2 - start_y**2))
+        
         distance_diff = abs(dist - distance_moved)
         
         if distance_diff < 0.01:
