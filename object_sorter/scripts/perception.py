@@ -53,7 +53,7 @@ class Perception:
         self.cur_tracked_obj = None
         self.sorting_mode = False
         self.moving_mode = False
-        self.idle_mode = False
+        self.idle_mode = True
 
         self.last_process_time = time.time()
         self.process_interval = 0.5 # sleep time between image process (s)
@@ -61,9 +61,9 @@ class Perception:
         rospy.loginfo("Running Perception node.")
     
     # resize to width needed for model
-    def resize_to_model_size(img):
+    def resize_to_model_size(self, img):
         img = self.bridge.imgmsg_to_cv2(img, desired_encoding="passthrough")
-        return cv2.resize(img, (MODEL_IMG_WIDTH, img.shape[0]), interpolation=cv2.INTER_LINEAR)
+        return cv2.resize(img, (MODEL_IMG_WIDTH, MODEL_IMG_WIDTH), interpolation=cv2.INTER_LINEAR)
 
     # track objects and initiate movement
     def image_callback(self, msg):
@@ -124,13 +124,14 @@ class Perception:
         self.moving_or_sorting()
     
     # handles logic of whether to keep moving or sorting (or go into idle status again)
-    def moving_or_sorting():
+    def moving_or_sorting(self):
         status = None
         if self.idle_mode:
             rospy.loginfo(f"Moving object {self.cur_tracked_obj}...")
             status = move(self.tracked_objects[self.cur_tracked_obj]) # moves a bit and returns whether done moving to object (but has not started sorting behavior yet)
             self.idle_mode = False
             self.moving_mode = True
+            self.sorting_mode = False
         elif self.moving_mode:
             status = move(self.tracked_objects[self.cur_tracked_obj])
         elif self.sorting_mode:
@@ -153,7 +154,7 @@ class Perception:
         bounding_boxes = yolo_result[0].boxes.xyxy.cpu()
         classes = yolo_result[0].boxes.cls.cpu().numpy().astype(int)
         obj_ids = yolo_result[0].boxes.id.int().cpu().tolist()
-        confs = yolo_result[0].boxes.conf.cpu().numpy().astype(int)
+        confs = yolo_result[0].boxes.conf.cpu().numpy().astype(float)
 
         info = {}
         for box, class_id, obj_id, conf in zip(bounding_boxes, classes, obj_ids, confs):
