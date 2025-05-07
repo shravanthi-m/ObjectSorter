@@ -9,11 +9,15 @@ from tf2_msgs.msg import TFMessage
 from movement import unpack
 
 current_rot = 0.0
+start_x = 0.0
+start_y = 0.0
+current_x = 0.0
+current_y = 0.0
 odom_received = False
 rate = rospy.Rate(10)
 
 def tf_callback(msg):
-    global current_rot, odom_received
+    global current_rot, current_x, current_y, odom_received
     frame_id = msg.transforms[-1].header.frame_id
     
     if frame_id == "/odom":
@@ -28,7 +32,9 @@ def tf_callback(msg):
         current_rot = rot
         odom_received = True
         
-
+        current_x = msg.transforms[-1].transform.translation.x
+        current_y = msg.transforms[-1].transform.translation.y
+        
 #rospy.init_node("move_robot")
 vel_publisher = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
 tf_subscriber = rospy.Subscriber("/tf", TFMessage, tf_callback)
@@ -38,7 +44,9 @@ def normalize_angle(angle):
     return np.arctan2(np.sin(angle), np.cos(angle))
 
 def move(msg):
-    global current_rot, odom_received
+    global current_rot, start_x, start_y, current_x, current_y, odom_received
+    start_x = current_x 
+    start_y = current_y
     color, x_center, center_depth, rotation_angle_deg, dist = unpack(msg)
     
     while not odom_received and not rospy.is_shutdown():
@@ -68,21 +76,27 @@ def move(msg):
 
     twist = Twist()
     move_speed = 0.1  # m/s
-    move_duration = dist / move_speed
-    start_time = rospy.Time.now().to_sec()
+    #move_duration = dist / move_speed
+    #start_time = rospy.Time.now().to_sec()
 
     rospy.loginfo(f"[{color}] Moving forward {dist:.2f} meters...")
 
     while not rospy.is_shutdown():
-        elapsed = rospy.Time.now().to_sec() - start_time
+        """elapsed = rospy.Time.now().to_sec() - start_time
         if elapsed >= move_duration:
+            break"""
+        distance_moved = np.sqrt((current_x**2 - start_x**2) + (current_y**2 - start_y**2))
+        distance_diff = abs(dist - distance_moved)
+        
+        if distance_diff < 0.01:
             break
+        
         twist.linear.x = move_speed
         vel_publisher.publish(twist)
         rate.sleep()
 
     vel_publisher.publish(Twist())
     rospy.loginfo(f"[{color}] Move complete.")
-
+    
     return True
 
