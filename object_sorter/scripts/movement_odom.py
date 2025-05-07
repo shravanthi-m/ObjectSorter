@@ -6,6 +6,7 @@ from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion
 from tf2_msgs.msg import TFMessage
+from movement import unpack
 
 current_rot = 0.0
 odom_received = False
@@ -36,9 +37,10 @@ def normalize_angle(angle):
     """ Normalize angle to [-pi, pi] """
     return np.arctan2(np.sin(angle), np.cos(angle))
 
-def move(color, x_center, center_depth, rotation_angle_deg, dist):
+def move(msg):
     global current_rot, odom_received
-
+    color, x_center, center_depth, rotation_angle_deg, dist = unpack(msg)
+    
     while not odom_received and not rospy.is_shutdown():
         print(odom_received)
         rospy.loginfo("Waiting for odom...")
