@@ -2,7 +2,7 @@
 
 # For getting and processing input data from realsense camera
 
-from object_sorter.scripts.random_walk import RandomController
+from random_walk import RandomController
 import rospy
 from sensor_msgs.msg import Image, Bool
 import ros_numpy
@@ -10,7 +10,7 @@ from cv_bridge import CvBridge
 import cv2
 from ultralytics import YOLO
 import numpy as np
-from movement import move, sort
+from movement_odom import move, sort
 import os
 import time
 
