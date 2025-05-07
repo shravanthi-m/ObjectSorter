@@ -82,7 +82,7 @@ class Perception:
         if time.time() - self.last_process_time < self.process_interval:  # skip frame
             return
 
-        print("Entered image callback...")
+        # print("Entered image callback...")
         if self.depth_image is None:
             rospy.logerr("!! Matching depth image not available, exiting !!")
             return
@@ -107,6 +107,8 @@ class Perception:
         while not rospy.is_shutdown():
             if self.rgb_image is None:
                 continue
+            rgb_image = self.rgb_image
+            depth_image = self.depth_image
             # as_np_arr = ros_numpy.numpify(resized_img)
             print("=====> START TRACKING...")
             result = model.track(self.rgb_image, persist=True)
@@ -121,7 +123,7 @@ class Perception:
                 continue
 
             objs_info, highest_conf_id = self.get_objects_info(
-                result
+                result, depth_image
             )  # color, x_center, center_depth, rotation_angle, dist from robot, conf, box for each obj (filters out dist = 0) + obj id with highest confidence
             if not objs_info:
                 print("!! All detected objects have distance = 0, exiting !!")
@@ -181,7 +183,7 @@ class Perception:
 
     # returns {obj id: (color, x_center, center_depth, rotation_angle, dist from robot, confidence, box} dict for tracked objects from yolo result
     # Note: filters out dist = 0
-    def get_objects_info(self, yolo_result):
+    def get_objects_info(self, yolo_result, depth_image):
         bounding_boxes = yolo_result[0].boxes.xyxy.cpu()
         classes = yolo_result[0].boxes.cls.cpu().numpy().astype(int)
         obj_ids = yolo_result[0].boxes.id.int().cpu().tolist()
@@ -201,7 +203,7 @@ class Perception:
 
             # center_depth
             center_depth = (
-                float(self.depth_image[y_center, x_center]) * 0.001
+                float(depth_image[y_center, x_center]) * 0.001
             )  # mm to m probably
 
             # rotation angle
@@ -250,6 +252,7 @@ class Perception:
 if __name__ == "__main__":
     try:
         perception = Perception()
-        rospy.spin()
+        perception.run()
+        # rospy.spin()
     except rospy.ROSInterruptException:
         pass
