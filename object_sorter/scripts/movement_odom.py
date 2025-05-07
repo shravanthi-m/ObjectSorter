@@ -5,16 +5,17 @@ import numpy as np
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion
-from tf import tfMessage
+from tf2_msgs.msg import TFMessage
 
 current_rot = 0.0
 odom_received = False
+rate = rospy.Rate(10)
 
 def tf_callback(msg):
     global current_rot, odom_received
     frame_id = msg.transforms[-1].header.frame_id
-
-    if frame_id == "odom":
+    
+    if frame_id == "/odom":
         orientation_q = msg.transforms[-1].transform.rotation
         _, _, rot = euler_from_quaternion([
             orientation_q.x,
@@ -22,24 +23,24 @@ def tf_callback(msg):
             orientation_q.z,
             orientation_q.w
         ])
-    
-    current_rot = rot
-    odom_received = True
+        
+        current_rot = rot
+        odom_received = True
+        
 
 #rospy.init_node("move_robot")
 vel_publisher = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
-tf_subscriber = rospy.Subscriber("/tf", tfMessage, tf_callback)
+tf_subscriber = rospy.Subscriber("/tf", TFMessage, tf_callback)
 
 def normalize_angle(angle):
     """ Normalize angle to [-pi, pi] """
     return np.arctan2(np.sin(angle), np.cos(angle))
 
 def move(color, x_center, center_depth, rotation_angle_deg, dist):
-    global current_rot
-
-    rate = rospy.Rate(10)
+    global current_rot, odom_received
 
     while not odom_received and not rospy.is_shutdown():
+        print(odom_received)
         rospy.loginfo("Waiting for odom...")
         rate.sleep()
 
@@ -82,3 +83,4 @@ def move(color, x_center, center_depth, rotation_angle_deg, dist):
     rospy.loginfo(f"[{color}] Move complete.")
 
     return True
+
