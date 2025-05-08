@@ -40,7 +40,6 @@ model = YOLO("/catkin_ws/src/object_sorter/best.onnx")
 
 class Perception:
     def __init__(self):
-        rospy.init_node("perception", anonymous=True)
         self.bridge = (
             CvBridge()
         )  # converts between ROS Image messages and OpenCV images

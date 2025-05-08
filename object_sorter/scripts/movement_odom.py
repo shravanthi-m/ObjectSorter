@@ -21,6 +21,9 @@ current_y = 0.0
 odom_received = False
 
 
+rospy.init_node("perception", anonymous=True)
+
+
 def tf_callback(msg):
     global current_rot, current_x, current_y, odom_received
     frame_id = msg.transforms[-1].header.frame_id
