@@ -65,10 +65,17 @@ def move(msg):
         rate.sleep()
 
     start_rot = current_rot
-    target_rot = normalize_angle(start_rot + np.deg2rad(rotation_angle_deg))
+    # Fix weird issues cause by arctan2: rotate left when rotation_angle_deg is positive, and vice versa
+    if rotation_angle_deg > 0:
+        # Positive angle means rotate right (clockwise)
+        target_rot = normalize_angle(start_rot - np.deg2rad(abs(rotation_angle_deg)))
+    else:
+        # Negative angle means rotate left (counterclockwise)
+        target_rot = normalize_angle(start_rot + np.deg2rad(abs(rotation_angle_deg)))
 
+    # This also seems to flip the sign of target_rot
     rospy.loginfo(
-        f"[{color}] Rotating from {np.rad2deg(start_rot):.2f}° to {np.rad2deg(target_rot):.2f}°"
+        f"[{color}] Rotating from {np.rad2deg(start_rot):.2f}° to {-np.rad2deg(target_rot):.2f}°"
     )
 
     while not rospy.is_shutdown():
@@ -79,7 +86,8 @@ def move(msg):
 
         twist = Twist()
         twist.angular.z = 0.5 * angle_diff
-        twist.linear.x = 0.1
+        # This looks like is what cause the move forward always seem off by some cm
+        # twist.linear.x = 0.1
         vel_publisher.publish(twist)
         rate.sleep()
 
