@@ -22,12 +22,10 @@ DEPTH_IMG_WIDTH = 1280
 MODEL_IMG_WIDTH = 640
 IMG_CENTER = MODEL_IMG_WIDTH / 2
 COLORS = [
-    "blue cuboid",
-    "blue cylinder",
-    "green cuboid",
-    "grey cuboid",
-    "purple cuboid",
-    "red cuboid",
+    "green cube",
+    "grey cube",
+    "purple cube",
+    "yellow cube",
 ]
 FOV_DEGREES = 69  # RGB field of view in degrees (horizontal)
 PIXELS_PER_DEGREE = MODEL_IMG_WIDTH / FOV_DEGREES
