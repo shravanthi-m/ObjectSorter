@@ -22,7 +22,16 @@ current_y = 0.0
 robot_pose_x = 0.0
 robot_pose_y = 0.0
 
+ROBOT_ORIGIN_ON_MAP = (-2.064, -1.503) # x and y of the pose of robot from amcl localization at the starting point
+
 rospy.init_node("perception", anonymous=True)
+
+bin_poses = {
+    "green cube": (-2.532, 0.882),
+    "grey cube": (-2.532, 0.882),
+    "purple cube": (-2.532, 0.882),
+    "yellow cube": (-2.532, 0.882),
+}
 
 
 def tf_callback(msg):
@@ -129,6 +138,9 @@ def move(msg):
     vel_publisher.publish(Twist())
     rospy.loginfo(f"[{color}] Move complete.")
 
+# converts the pose from odom to the map pose
+def odom_pose_to_map_pose(odom_x, odom_y):
+    return (odom_x + ROBOT_ORIGIN_ON_MAP[0], odom_y + ROBOT_ORIGIN_ON_MAP[1])
 
 def sort(obj_info):
     global current_rot, odom_received, start_x, start_y, current_x, current_y, robot_pose_x, robot_pose_y
@@ -144,7 +156,7 @@ def sort(obj_info):
         rate.sleep()
 
     start_rot = current_rot
-    bin_pose_x, bin_pose_y, bin_pose_z = bin_poses[color]
+    bin_pose_x, bin_pose_y = bin_poses[color] # map pose
     dx = bin_pose_x - robot_pose_x 
     dy = bin_pose_y - robot_pose_y 
     target_rot = np.arctan2(dy, dx)
@@ -164,7 +176,7 @@ def sort(obj_info):
 
     vel_publisher.publish(Twist())
     rospy.sleep(0.5)
-    
+
     dist = np.sqrt(
         (bin_pose_x**2 - robot_pose_x**2) + (bin_pose_y**2 - robot_pose_y**2)
     )
