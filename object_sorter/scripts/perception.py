@@ -225,8 +225,8 @@ class Perception:
         x1, y1, x2, y2 = (
             box  # NOT normalized (top-left and bottom-right corners of bounding box)
         )
-        depth_sub_box = depth_image[y1:y2, x1:x2]
-        return float(np.min(depth_sub_box)) * 0.001
+        depth_sub_box = depth_image[int(y1):int(y2), int(x1):int(x2)]
+        return float(np.min(depth_sub_box[np.nonzero(depth_sub_box)])) * 0.001
 
     # returns {obj id: (color, x_center, center_depth, rotation_angle, dist from robot, confidence, box} dict for tracked objects from yolo result
     # Note: filters out dist = 0
