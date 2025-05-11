@@ -114,7 +114,9 @@ class Perception:
         self.rgb_image = resized_img
         self.d_image = self.depth_image
 
-    def run(self):
+        self.last_process_time = time.time()
+
+    def run_simple(self):
         while not rospy.is_shutdown():
             if self.rgb_image is None:
                 continue
@@ -142,26 +144,52 @@ class Perception:
 
             self.tracked_objects = objs_info  # store internally
 
-            self.last_process_time = time.time()
+            self.cur_tracked_obj = (
+                highest_conf_id  # "lock onto" object with the highest confidence
+            )
+            detected_msg = Bool()
+            detected_msg.data = True
 
+            move(self.tracked_objects[self.cur_tracked_obj])
+            sort(self.tracked_objects[self.cur_tracked_obj])
+
+    def run(self):
+        while not rospy.is_shutdown():
+            if self.rgb_image is None:
+                continue
+            rgb_image = self.rgb_image
+            depth_image = self.d_image
+            # as_np_arr = ros_numpy.numpify(resized_img)
             if self.idle_mode:
+                print("=====> START TRACKING...")
+                result = model.track(rgb_image, persist=True)
+                print("=====> DONE TRACKING!")
+                # result[0].show()
+
+                # if there are no tracked objects, return
+                contains_tracked_items = result[0].boxes.id is not None
+                if not contains_tracked_items:
+                    print("!! No tracked objects, random walk !!")
+                    self.random_walk_controller.action_execute()
+                    continue
+
+                objs_info, highest_conf_id = self.get_objects_info(
+                    result, depth_image
+                )  # color, x_center, center_depth, rotation_angle, dist from robot, conf, box for each obj (filters out dist = 0) + obj id with highest confidence
+                if not objs_info:
+                    print("!! All detected objects have distance = 0, exiting !!")
+                    continue
+
+                self.tracked_objects = objs_info  # store internally
+
                 self.cur_tracked_obj = (
                     highest_conf_id  # "lock onto" object with the highest confidence
                 )
                 detected_msg = Bool()
                 detected_msg.data = True
                 # self.object_detected_publisher.publish(bool_msg)
-
-            if self.cur_tracked_obj not in self.tracked_objects:
-                print(
-                    f"!! Lost tracked object {self.cur_tracked_obj}, exiting and starting over !!"
-                )
-                self.idle_mode = True
-                self.moving_mode = False
-                self.sorting_mode = False
-                continue
-
-            self.moving_or_sorting()
+            else: # we already locked onto an object
+                self.moving_or_sorting()
 
     # handles logic of whether to keep moving or sorting (or go into idle status again)
     def moving_or_sorting(self):
@@ -263,7 +291,7 @@ class Perception:
 if __name__ == "__main__":
     try:
         perception = Perception()
-        perception.run()
+        perception.run_simple()
         # rospy.spin()
     except rospy.ROSInterruptException:
         pass
