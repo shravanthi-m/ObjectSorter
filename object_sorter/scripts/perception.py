@@ -51,7 +51,7 @@ class Perception:
         )  # rgb image from realsense camera
         self.depth_image_subscriber = rospy.Subscriber(
             "/camera/aligned_depth_to_color/image_raw", Image, self.depth_image_callback
-        )
+        ) # 640 x 480
 
         # publishers
         # self.object_detected_publisher = rospy.Publisher(
@@ -220,6 +220,14 @@ class Perception:
             self.moving_mode = False
             self.idle_mode = True
 
+    # returns the minimum depth from all pixels in the box
+    def get_center_depth(box, depth_image):
+        x1, y1, x2, y2 = (
+            box  # NOT normalized (top-left and bottom-right corners of bounding box)
+        )
+        depth_sub_box = depth_image[y1:y2, x1:x2]
+        return float(np.min(depth_sub_box)) * 0.001
+
     # returns {obj id: (color, x_center, center_depth, rotation_angle, dist from robot, confidence, box} dict for tracked objects from yolo result
     # Note: filters out dist = 0
     def get_objects_info(self, yolo_result, depth_image):
@@ -241,9 +249,7 @@ class Perception:
             y_center = int((y1 + y2) / 2)
 
             # center_depth
-            center_depth = (
-                float(depth_image[y_center, x_center]) * 0.001
-            )  # mm to m probably
+            center_depth = self.get_center_depth(box, depth_image) # in meters
 
             # rotation angle
             # zero when object is centered, negative if object is to the left, positive if to the right
