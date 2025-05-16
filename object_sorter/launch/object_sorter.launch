@@ -1,0 +1,8 @@
+<launch>
+<include file="$(find stingray_camera)/launch/triton.launch" /> 
+
+<param name="width" value="0.75" />
+<param name="height" value="1.0" />
+
+<node pkg="object_sorter" type="perception.py" name="perception" output="screen" />
+</launch>

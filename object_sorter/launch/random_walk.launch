@@ -1,0 +1,4 @@
+<launch>
+<include file="$(find stingray_camera)/launch/triton.launch" /> 
+  <node pkg="object_sorter" type="random_walk.py"  name="random_walk_controller" output="screen" />
+</launch>
