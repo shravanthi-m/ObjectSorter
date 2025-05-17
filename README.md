@@ -32,7 +32,7 @@ Make sure these ROS dependencies are also installed (for ROS noetic):
 
 Using this ROS package also requires the Triton noetic dockerfile setup.
 
-- ## Running the sorting
+## Running the program
 
 After all of the above is set up:
 1. Start the container
@@ -44,7 +44,3 @@ After all of the above is set up:
 The robot will start tracing the perimeter of the space. Change the dimensions if needed, then run again.
 
 After tracing the perimeter, the robot will automatically align with the center and begin tracking, classifying, and sorting objects to their designated bins.
-
-
-In a README file, include a detailed instruction of how to compile, use and test the code. In general,
-you code must compile, be well-documented, and run without crashing.
