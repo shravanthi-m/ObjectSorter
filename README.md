@@ -30,7 +30,7 @@ Make sure these ROS dependencies are also installed (for ROS noetic):
 - tf2-msgs
 - cv-bridge
 
-Using this ROS package also requires the Triton noetic dockerfile setup.
+Using this ROS package also requires the Triton noetic docker container setup.
 
 ## Running the program
 
