@@ -1,4 +1,4 @@
-# ObjectSorter
+# Object Sorter
 
 This is a ROS package for automatically sorting objects by color and shape in a user-defined rectangular area.
 
